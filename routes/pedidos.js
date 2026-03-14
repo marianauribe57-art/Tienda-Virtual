@@ -1,24 +1,8 @@
 const express = require('express');
 const router = express.Router();
+const db = require('../db');
 
-const pedidos = [
-    { 
-        id: 1, 
-        usuarioId: 1, 
-        productos: ['Laptop', 'Mouse'], 
-        total: 2500, 
-        estado: 'pendiente', 
-        fecha: '2025-02-01' 
-    },
-    { 
-        id: 2, 
-        usuarioId: 2, 
-        productos: ['Teclado'], 
-        total: 300, 
-        estado: 'enviado', 
-        fecha: '2025-02-10' 
-    }
-];
+const estadosValidos = ['pendiente', 'enviado', 'entregado', 'cancelado'];
 
 
 // GET: todos los pedidos
@@ -27,30 +11,40 @@ router.get('/pedidos', (req, res) => {
     const apiKey = req.headers['password'];
 
     if (!apiKey) {
-        return res.status(401).json({
-            success: false,
-            message: 'API key es requerida'
-        });
+        return res.status(401).json({ success: false, message: 'API key es requerida' });
     }
-
     if (apiKey !== '12345') {
-        return res.status(403).json({
-            success: false,
-            message: 'Error la password no es correcta'
-        });
+        return res.status(403).json({ success: false, message: 'Error la password no es correcta' });
     }
 
     const { usuarioId, estado, fecha } = req.query;
 
-    let filtradosPedidos = pedidos.filter(p => {
-        return (
-            (!usuarioId || p.usuarioId === parseInt(usuarioId)) &&
-            (!estado || p.estado.toLowerCase().includes(estado.toLowerCase())) &&
-            (!fecha || p.fecha === fecha)
-        );
-    });
+    let query = "SELECT * FROM Pedidos WHERE 1=1";
+    let params = [];
 
-    res.json({ success: true, Headers: { apiKey }, data: filtradosPedidos });
+    if (usuarioId) {
+        query += " AND usuarioId = ?";
+        params.push(parseInt(usuarioId));
+    }
+
+    if (estado) {
+        query += " AND estado LIKE ?";
+        params.push(`%${estado}%`);
+    }
+
+    if (fecha) {
+        query += " AND fecha = ?";
+        params.push(fecha);
+    }
+
+    db.all(query, params, (err, rows) => {
+
+        if (err) {
+            return res.status(500).json({ success:false, error: err.message });
+        }
+
+        res.json({ success: true, Headers: { apiKey }, data: rows });
+    });
 });
 
 
@@ -60,26 +54,30 @@ router.get('/pedidos/:id', (req, res) => {
     const apiKey = req.headers['password'];
 
     if (!apiKey) {
-        return res.status(401).json({
-            success: false,
-            message: 'API key es requerida'
-        });
+        return res.status(401).json({ success: false, message: 'API key es requerida' });
     }
-
     if (apiKey !== '12345') {
-        return res.status(403).json({
-            success: false,
-            message: 'Error la password no es correcta'
-        });
+        return res.status(403).json({ success: false, message: 'Error la password no es correcta' });
     }
 
-    const pedido = pedidos.find(p => p.id === parseInt(req.params.id));
-
-    if (!pedido) {
-        return res.status(404).json({ success: false, message: 'Pedido no encontrado' });
+    if (isNaN(req.params.id)) {
+        return res.status(400).json({ success: false, message: 'El ID debe ser un número válido' });
     }
 
-    res.json({ success: true, Headers: { apiKey }, data: pedido });
+    const id = parseInt(req.params.id);
+
+    db.get("SELECT * FROM Pedidos WHERE id = ?", [id], (err, row) => {
+
+        if (err) {
+            return res.status(500).json({ error: err.message });
+        }
+
+        if (!row) {
+            return res.status(404).json({ success: false, message: 'Pedido no encontrado' });
+        }
+
+        res.json({ success: true, Headers: { apiKey }, data: row });
+    });
 });
 
 
@@ -90,44 +88,69 @@ router.post('/pedidos', (req, res) => {
     const roleHeader = req.headers['x-user-role'];
 
     if (!apiKey) {
-        return res.status(401).json({
-            success: false,
-            message: 'API key es requerida'
-        });
+        return res.status(401).json({ success: false, message: 'API key es requerida' });
     }
-
     if (apiKey !== '6789') {
-        return res.status(403).json({
-            success: false,
-            message: 'Error la password no es correcta'
-        });
+        return res.status(403).json({ success: false, message: 'Error la password no es correcta' });
     }
-
     if (roleHeader !== 'admin') {
-        return res.status(403).json({
+        return res.status(403).json({ success: false, message: 'No tienes permisos para realizar esta acción' });
+    }
+
+    const { usuarioId, total, estado, fecha } = req.body;
+
+    if (!usuarioId || total === undefined || !estado || !fecha) {
+        return res.status(400).json({
             success: false,
-            message: 'No tienes permisos para realizar esta acción'
+            message: 'Faltan datos requeridos: usuarioId, total, estado, fecha'
         });
     }
 
-    const { usuarioId, productos, total, estado, fecha } = req.body;
-
-    if (!usuarioId || !productos || !total || !estado || !fecha) {
-        return res.status(400).json({ success: false, message: 'Faltan datos requeridos' });
+    if (isNaN(usuarioId) || parseInt(usuarioId) <= 0) {
+        return res.status(400).json({ success: false, message: 'El usuarioId debe ser un número válido mayor a 0' });
     }
 
-    const newPedido = {
-        id: pedidos.length + 1,
-        usuarioId,
-        productos,
-        total,
-        estado,
-        fecha
-    };
+    if (isNaN(total) || total <= 0) {
+        return res.status(400).json({ success: false, message: 'El total debe ser un número mayor a 0' });
+    }
 
-    pedidos.push(newPedido);
+    if (!estadosValidos.includes(estado.toLowerCase())) {
+        return res.status(400).json({
+            success: false,
+            message: `El estado debe ser uno de: ${estadosValidos.join(', ')}`
+        });
+    }
 
-    res.status(201).json({ success: true, Headers: { apiKey, roleHeader }, data: newPedido });
+    const fechaRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!fechaRegex.test(fecha)) {
+        return res.status(400).json({
+            success: false,
+            message: 'El formato de fecha debe ser YYYY-MM-DD'
+        });
+    }
+
+    db.run(
+        "INSERT INTO Pedidos (usuarioId, total, estado, fecha) VALUES (?, ?, ?, ?)",
+        [usuarioId, total, estado, fecha],
+        function(err){
+
+            if (err) {
+                return res.status(500).json({ error: err.message });
+            }
+
+            res.status(201).json({
+                success: true,
+                Headers: { apiKey, roleHeader },
+                data: {
+                    id: this.lastID,
+                    usuarioId,
+                    total,
+                    estado,
+                    fecha
+                }
+            });
+        }
+    );
 });
 
 
@@ -138,42 +161,72 @@ router.put('/pedidos/:id', (req, res) => {
     const roleHeader = req.headers['x-user-role'];
 
     if (!apiKey) {
-        return res.status(401).json({
-            success: false,
-            message: 'API key es requerida'
-        });
+        return res.status(401).json({ success: false, message: 'API key es requerida' });
     }
-
     if (apiKey !== '6789') {
-        return res.status(403).json({
-            success: false,
-            message: 'Error la password no es correcta'
-        });
+        return res.status(403).json({ success: false, message: 'Error la password no es correcta' });
+    }
+    if (roleHeader !== 'admin') {
+        return res.status(403).json({ success: false, message: 'No tienes permisos para realizar esta acción' });
     }
 
-    if (roleHeader !== 'admin') {
-        return res.status(403).json({
-            success: false,
-            message: 'No tienes permisos para realizar esta acción'
-        });
+    if (isNaN(req.params.id)) {
+        return res.status(400).json({ success: false, message: 'El ID debe ser un número válido' });
     }
 
     const id = parseInt(req.params.id);
-    const { usuarioId, productos, total, estado, fecha } = req.body;
+    const { usuarioId, total, estado, fecha } = req.body;
 
-    const pedido = pedidos.find(p => p.id === id);
-
-    if (!pedido) {
-        return res.status(404).json({ success: false, message: 'Pedido no encontrado' });
+    if (!usuarioId || total === undefined || !estado || !fecha) {
+        return res.status(400).json({
+            success: false,
+            message: 'Faltan datos requeridos: usuarioId, total, estado, fecha'
+        });
     }
 
-    pedido.usuarioId = usuarioId;
-    pedido.productos = productos;
-    pedido.total = total;
-    pedido.estado = estado;
-    pedido.fecha = fecha;
+    if (isNaN(usuarioId) || parseInt(usuarioId) <= 0) {
+        return res.status(400).json({ success: false, message: 'El usuarioId debe ser un número válido mayor a 0' });
+    }
 
-    res.json({ success: true, Headers: { apiKey, roleHeader }, data: pedido });
+    if (isNaN(total) || total <= 0) {
+        return res.status(400).json({ success: false, message: 'El total debe ser un número mayor a 0' });
+    }
+
+    if (!estadosValidos.includes(estado.toLowerCase())) {
+        return res.status(400).json({
+            success: false,
+            message: `El estado debe ser uno de: ${estadosValidos.join(', ')}`
+        });
+    }
+
+    const fechaRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!fechaRegex.test(fecha)) {
+        return res.status(400).json({
+            success: false,
+            message: 'El formato de fecha debe ser YYYY-MM-DD'
+        });
+    }
+
+    db.run(
+        "UPDATE Pedidos SET usuarioId=?, total=?, estado=?, fecha=? WHERE id=?",
+        [usuarioId, total, estado, fecha, id],
+        function(err){
+
+            if (err) {
+                return res.status(500).json({ error: err.message });
+            }
+
+            if (this.changes === 0) {
+                return res.status(404).json({ success:false, message:'Pedido no encontrado' });
+            }
+
+            res.json({
+                success:true,
+                Headers:{ apiKey, roleHeader },
+                data:'Pedido actualizado'
+            });
+        }
+    );
 });
 
 
@@ -184,35 +237,37 @@ router.delete('/pedidos/:id', (req, res) => {
     const roleHeader = req.headers['x-user-role'];
 
     if (!apiKey) {
-        return res.status(401).json({
-            success: false,
-            message: 'API key es requerida'
-        });
+        return res.status(401).json({ success: false, message: 'API key es requerida' });
     }
-
     if (apiKey !== '6789') {
-        return res.status(403).json({
-            success: false,
-            message: 'Error la password no es correcta'
-        });
+        return res.status(403).json({ success: false, message: 'Error la password no es correcta' });
     }
-
     if (roleHeader !== 'admin') {
-        return res.status(403).json({
-            success: false,
-            message: 'No tienes permisos para realizar esta acción'
+        return res.status(403).json({ success: false, message: 'No tienes permisos para realizar esta acción' });
+    }
+
+    if (isNaN(req.params.id)) {
+        return res.status(400).json({ success: false, message: 'El ID debe ser un número válido' });
+    }
+
+    const id = parseInt(req.params.id);
+
+    db.run("DELETE FROM Pedidos WHERE id = ?", [id], function(err){
+
+        if (err) {
+            return res.status(500).json({ error: err.message });
+        }
+
+        if (this.changes === 0) {
+            return res.status(404).json({ success:false, message:'Pedido no encontrado' });
+        }
+
+        res.status(200).json({
+            success:true,
+            Headers:{ apiKey, roleHeader },
+            data:'El pedido se ha eliminado'
         });
-    }
-
-    const index = pedidos.findIndex(p => p.id === parseInt(req.params.id));
-
-    if (index === -1) {
-        return res.status(404).json({ success: false, message: 'Pedido no encontrado' });
-    }
-
-    pedidos.splice(index, 1);
-
-    res.status(201).json({ success: true, Headers: { apiKey, roleHeader }, data: "El pedido se ha eliminado" });
+    });
 });
 
 module.exports = router;
