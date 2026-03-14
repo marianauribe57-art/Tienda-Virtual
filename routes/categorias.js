@@ -1,11 +1,6 @@
 const express = require('express');
 const router = express.Router();
-
-const categorias = [
-    { id: 1, nombre: 'Computacion', descripcion: 'Productos tecnológicos', activa: true },
-    { id: 2, nombre: 'Electrónica', descripcion: 'Dispositivos electrónicos', activa: true },
-    { id: 3, nombre: 'Maquinaria', descripcion: 'Equipos industriales', activa: false }
-];
+const db = require('../db');
 
 
 // GET - Obtener categorias
@@ -14,30 +9,41 @@ router.get('/categorias', (req, res) => {
     const apiKey = req.headers['password'];
 
     if (!apiKey) {
-        return res.status(401).json({
-            success: false,
-            message: 'API key es requerida'
-        });
+        return res.status(401).json({ success: false, message: 'API key es requerida' });
     }
-
     if (apiKey !== '12345') {
-        return res.status(403).json({
-            success: false,
-            message: 'Error la password no es correcta'
-        });
+        return res.status(403).json({ success: false, message: 'Error la password no es correcta' });
     }
 
     const { nombre, descripcion, activa } = req.query;
 
-    let filteredCategorias = categorias.filter(c => {
-        return (
-            (!nombre || c.nombre.toLowerCase().includes(nombre.toLowerCase())) &&
-            (!descripcion || c.descripcion.toLowerCase().includes(descripcion.toLowerCase())) &&
-            (!activa || c.activa.toString() === activa.toString())
-        );
-    });
+    let query = "SELECT * FROM Categorias WHERE 1=1";
+    let params = [];
 
-    res.json({ success: true, Headers: { apiKey }, data: filteredCategorias });
+    if (nombre) {
+        query += " AND nombre LIKE ?";
+        params.push(`%${nombre}%`);
+    }
+
+    if (descripcion) {
+        query += " AND descripcion LIKE ?";
+        params.push(`%${descripcion}%`);
+    }
+
+    if (activa !== undefined) {
+        query += " AND activa = ?";
+        params.push(activa);
+    }
+
+    db.all(query, params, (err, rows) => {
+
+        if (err) {
+            return res.status(500).json({ success:false, error: err.message });
+        }
+
+        res.json({ success: true, Headers: { apiKey }, data: rows });
+
+    });
 });
 
 
@@ -47,26 +53,31 @@ router.get('/categorias/:id', (req, res) => {
     const apiKey = req.headers['password'];
 
     if (!apiKey) {
-        return res.status(401).json({
-            success: false,
-            message: 'API key es requerida'
-        });
+        return res.status(401).json({ success: false, message: 'API key es requerida' });
     }
-
     if (apiKey !== '12345') {
-        return res.status(403).json({
-            success: false,
-            message: 'Error la password no es correcta'
-        });
+        return res.status(403).json({ success: false, message: 'Error la password no es correcta' });
     }
 
-    const categoria = categorias.find(c => c.id === parseInt(req.params.id));
-
-    if (!categoria) {
-        return res.status(404).json({ success: false, message: 'Categoria no encontrada' });
+    if (isNaN(req.params.id)) {
+        return res.status(400).json({ success: false, message: 'El ID debe ser un número válido' });
     }
 
-    res.json({ success: true, Headers: { apiKey }, data: categoria });
+    const id = parseInt(req.params.id);
+
+    db.get("SELECT * FROM Categorias WHERE id = ?", [id], (err, row) => {
+
+        if (err) {
+            return res.status(500).json({ error: err.message });
+        }
+
+        if (!row) {
+            return res.status(404).json({ success: false, message: 'Categoria no encontrada' });
+        }
+
+        res.json({ success: true, Headers: { apiKey }, data: row });
+
+    });
 });
 
 
@@ -77,45 +88,56 @@ router.post('/categorias', (req, res) => {
     const roleHeader = req.headers['x-user-role'];
 
     if (!apiKey) {
-        return res.status(401).json({
-            success: false,
-            message: 'API key es requerida'
-        });
+        return res.status(401).json({ success: false, message: 'API key es requerida' });
     }
-
     if (apiKey !== '6789') {
-        return res.status(403).json({
-            success: false,
-            message: 'Error la password no es correcta'
-        });
+        return res.status(403).json({ success: false, message: 'Error la password no es correcta' });
     }
-
     if (roleHeader !== 'admin') {
-        return res.status(403).json({
-            success: false,
-            message: 'No tienes permisos para realizar esta acción'
-        });
+        return res.status(403).json({ success: false, message: 'No tienes permisos para realizar esta acción' });
     }
 
     const { nombre, descripcion, activa } = req.body;
 
     if (!nombre || !descripcion || activa === undefined) {
-        return res.status(400).json({
-            success: false,
-            message: 'Faltan datos requeridos'
-        });
+        return res.status(400).json({ success: false, message: 'Faltan datos requeridos: nombre, descripcion, activa' });
     }
 
-    const newCategoria = {
-        id: categorias.length + 1,
-        nombre,
-        descripcion,
-        activa
-    };
+    if (typeof activa !== 'boolean') {
+        return res.status(400).json({ success: false, message: 'El campo activa debe ser true o false' });
+    }
 
-    categorias.push(newCategoria);
+    db.get("SELECT * FROM Categorias WHERE LOWER(nombre) = LOWER(?)", [nombre], (err, row) => {
 
-    res.status(201).json({ success: true, Headers: { apiKey, roleHeader }, data: newCategoria });
+        if (row) {
+            return res.status(400).json({ success:false, message:'Ya existe una categoría con ese nombre' });
+        }
+
+        db.run(
+            "INSERT INTO Categorias (nombre, descripcion, activa) VALUES (?, ?, ?)",
+            [nombre, descripcion, activa],
+            function(err){
+
+                if (err) {
+                    return res.status(500).json({ error: err.message });
+                }
+
+                res.status(201).json({
+                    success: true,
+                    Headers: { apiKey, roleHeader },
+                    data: {
+                        id: this.lastID,
+                        nombre,
+                        descripcion,
+                        activa
+                    }
+                });
+
+            }
+        );
+
+    });
+
 });
 
 
@@ -126,39 +148,51 @@ router.put('/categorias/:id', (req, res) => {
     const roleHeader = req.headers['x-user-role'];
 
     if (!apiKey) {
-        return res.status(401).json({
-            success: false,
-            message: 'API key es requerida'
-        });
+        return res.status(401).json({ success: false, message: 'API key es requerida' });
     }
-
     if (apiKey !== '6789') {
-        return res.status(403).json({
-            success: false,
-            message: 'Error la password no es correcta'
-        });
+        return res.status(403).json({ success: false, message: 'Error la password no es correcta' });
     }
-
     if (roleHeader !== 'admin') {
-        return res.status(403).json({
-            success: false,
-            message: 'No tienes permisos para realizar esta acción'
-        });
+        return res.status(403).json({ success: false, message: 'No tienes permisos para realizar esta acción' });
     }
 
-    const categoria = categorias.find(c => c.id === parseInt(req.params.id));
-
-    if (!categoria) {
-        return res.status(404).json({ success: false, message: 'Categoria no encontrada' });
+    if (isNaN(req.params.id)) {
+        return res.status(400).json({ success: false, message: 'El ID debe ser un número válido' });
     }
 
+    const id = parseInt(req.params.id);
     const { nombre, descripcion, activa } = req.body;
 
-    categoria.nombre = nombre;
-    categoria.descripcion = descripcion;
-    categoria.activa = activa;
+    if (!nombre || !descripcion || activa === undefined) {
+        return res.status(400).json({ success: false, message: 'Faltan datos requeridos: nombre, descripcion, activa' });
+    }
 
-    res.json({ success: true, Headers: { apiKey, roleHeader }, data: categoria });
+    if (typeof activa !== 'boolean') {
+        return res.status(400).json({ success: false, message: 'El campo activa debe ser true o false' });
+    }
+
+    db.run(
+        "UPDATE Categorias SET nombre=?, descripcion=?, activa=? WHERE id=?",
+        [nombre, descripcion, activa, id],
+        function(err){
+
+            if (err) {
+                return res.status(500).json({ error: err.message });
+            }
+
+            if (this.changes === 0) {
+                return res.status(404).json({ success:false, message:'Categoria no encontrada' });
+            }
+
+            res.json({
+                success:true,
+                Headers:{ apiKey, roleHeader },
+                data:'Categoria actualizada'
+            });
+
+        }
+    );
 });
 
 
@@ -169,38 +203,37 @@ router.delete('/categorias/:id', (req, res) => {
     const roleHeader = req.headers['x-user-role'];
 
     if (!apiKey) {
-        return res.status(401).json({
-            success: false,
-            message: 'API key es requerida'
-        });
+        return res.status(401).json({ success: false, message: 'API key es requerida' });
     }
-
     if (apiKey !== '6789') {
-        return res.status(403).json({
-            success: false,
-            message: 'Error la password no es correcta'
-        });
+        return res.status(403).json({ success: false, message: 'Error la password no es correcta' });
     }
-
     if (roleHeader !== 'admin') {
-        return res.status(403).json({
-            success: false,
-            message: 'No tienes permisos para realizar esta acción'
+        return res.status(403).json({ success: false, message: 'No tienes permisos para realizar esta acción' });
+    }
+
+    if (isNaN(req.params.id)) {
+        return res.status(400).json({ success: false, message: 'El ID debe ser un número válido' });
+    }
+
+    const id = parseInt(req.params.id);
+
+    db.run("DELETE FROM Categorias WHERE id = ?", [id], function(err){
+
+        if (err) {
+            return res.status(500).json({ error: err.message });
+        }
+
+        if (this.changes === 0) {
+            return res.status(404).json({ success:false, message:'Categoria no encontrada' });
+        }
+
+        res.status(200).json({
+            success:true,
+            Headers:{ apiKey, roleHeader },
+            data:'La Categoria se ha eliminado'
         });
-    }
 
-    const categoriaIndex = categorias.findIndex(c => c.id === parseInt(req.params.id));
-
-    if (categoriaIndex === -1) {
-        return res.status(404).json({ success: false, message: 'Categoria no encontrada' });
-    }
-
-    categorias.splice(categoriaIndex, 1);
-
-    res.status(201).json({
-        success: true,
-        Headers: { apiKey, roleHeader },
-        data: "La Categoria se ha eliminado"
     });
 });
 
