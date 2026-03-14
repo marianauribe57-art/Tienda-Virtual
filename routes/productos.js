@@ -1,11 +1,6 @@
 const express = require('express');
 const router = express.Router();
-
-const productos = [
-    { id: 1, nombre: 'Pc', precio: 2000, descripcion: 'Computadora de escritorio', stock: 10, categoria: 'Computacion' },
-    { id: 2, nombre: 'Laptop', precio: 3000, descripcion: 'Computadora portátil', stock: 5, categoria: 'Electrónica' },
-    { id: 3, nombre: 'Mouse', precio: 50, descripcion: 'Mouse inalámbrico', stock: 20, categoria: 'Electrónica' }
-];
+const db = require('../db');
 
 
 // GET - Obtener productos
@@ -14,32 +9,50 @@ router.get('/productos', (req, res) => {
     const apiKey = req.headers['password'];
 
     if (!apiKey) {
-        return res.status(401).json({
-            success: false,
-            message: 'API key es requerida'
-        });
+        return res.status(401).json({ success: false, message: 'API key es requerida' });
     }
-
     if (apiKey !== '12345') {
-        return res.status(403).json({
-            success: false,
-            message: 'Error la password no es correcta'
-        });
+        return res.status(403).json({ success: false, message: 'Error la password no es correcta' });
     }
 
-    const { nombre, precio, descripcion, stock, categoria } = req.query;
+    const { nombre, precio, descripcion, stock, categoriaId } = req.query;
 
-    let filteredProducts = productos.filter(p => {
-        return (
-            (!nombre || p.nombre.toLowerCase().includes(nombre.toLowerCase())) &&
-            (!precio || p.precio === parseFloat(precio)) &&
-            (!descripcion || p.descripcion.toLowerCase().includes(descripcion.toLowerCase())) &&
-            (!stock || p.stock === parseInt(stock)) &&
-            (!categoria || p.categoria.toLowerCase().includes(categoria.toLowerCase()))
-        );
+    let query = "SELECT * FROM Productos WHERE 1=1";
+    let params = [];
+
+    if (nombre) {
+        query += " AND nombre LIKE ?";
+        params.push(`%${nombre}%`);
+    }
+
+    if (precio !== undefined) {
+        query += " AND precio = ?";
+        params.push(parseFloat(precio));
+    }
+
+    if (descripcion) {
+        query += " AND descripcion LIKE ?";
+        params.push(`%${descripcion}%`);
+    }
+
+    if (stock !== undefined) {
+        query += " AND stock = ?";
+        params.push(parseInt(stock));
+    }
+
+    if (categoriaId) {
+        query += " AND categoria LIKE ?";
+        params.push(`%${categoria}%`);
+    }
+
+    db.all(query, params, (err, rows) => {
+
+        if (err) {
+            return res.status(500).json({ success: false, error: err.message });
+        }
+
+        res.json({ success: true, Headers: { apiKey }, data: rows });
     });
-
-    res.json({ success: true, Headers: { apiKey }, data: filteredProducts });
 });
 
 
@@ -49,26 +62,30 @@ router.get('/productos/:id', (req, res) => {
     const apiKey = req.headers['password'];
 
     if (!apiKey) {
-        return res.status(401).json({
-            success: false,
-            message: 'API key es requerida'
-        });
+        return res.status(401).json({ success: false, message: 'API key es requerida' });
     }
-
     if (apiKey !== '12345') {
-        return res.status(403).json({
-            success: false,
-            message: 'Error la password no es correcta'
-        });
+        return res.status(403).json({ success: false, message: 'Error la password no es correcta' });
     }
 
-    const product = productos.find(u => u.id === parseInt(req.params.id));
-
-    if (!product) {
-        return res.status(404).json({ success: false, message: 'Producto no encontrado' });
+    if (isNaN(req.params.id)) {
+        return res.status(400).json({ success: false, message: 'El ID debe ser un número válido' });
     }
 
-    res.json({ success: true, Headers: { apiKey }, data: product });
+    const id = parseInt(req.params.id);
+
+    db.get("SELECT * FROM Productos WHERE id = ?", [id], (err, row) => {
+
+        if (err) {
+            return res.status(500).json({ error: err.message });
+        }
+
+        if (!row) {
+            return res.status(404).json({ success: false, message: 'Producto no encontrado' });
+        }
+
+        res.json({ success: true, Headers: { apiKey }, data: row });
+    });
 });
 
 
@@ -79,92 +96,116 @@ router.post('/productos', (req, res) => {
     const roleHeader = req.headers['x-user-role'];
 
     if (!apiKey) {
-        return res.status(401).json({
-            success: false,
-            message: 'API key es requerida'
-        });
+        return res.status(401).json({ success: false, message: 'API key es requerida' });
     }
-
     if (apiKey !== '6789') {
-        return res.status(403).json({
-            success: false,
-            message: 'Error la password no es correcta'
-        });
+        return res.status(403).json({ success: false, message: 'Error la password no es correcta' });
     }
-
     if (roleHeader !== 'admin') {
-        return res.status(403).json({
-            success: false,
-            message: 'No tienes permisos para realizar esta acción'
-        });
+        return res.status(403).json({ success: false, message: 'No tienes permisos para realizar esta acción' });
     }
 
-    const { nombre, precio, descripcion, stock, categoria } = req.body;
+    const { nombre, precio, descripcion, stock, categoriaId } = req.body;
 
-    if (!nombre || !precio || !descripcion || !stock || !categoria) {
+    if (!nombre || precio === undefined || !descripcion || stock === undefined || !categoriaId) {
         return res.status(400).json({
             success: false,
-            message: 'Faltan datos requeridos'
+            message: 'Faltan datos requeridos: nombre, precio, descripcion, stock, categoriaId'
         });
     }
 
-    const newProduct = {
-        id: productos.length + 1,
-        nombre,
-        precio,
-        descripcion,
-        stock,
-        categoria
-    };
+    if (isNaN(precio) || precio <= 0) {
+        return res.status(400).json({ success: false, message: 'El precio debe ser un número mayor a 0' });
+    }
 
-    productos.push(newProduct);
+    if (isNaN(stock) || stock < 0) {
+        return res.status(400).json({ success: false, message: 'El stock debe ser un número mayor o igual a 0' });
+    }
 
-    res.status(201).json({ success: true, Headers: { apiKey, roleHeader }, data: newProduct });
+    db.run(
+        "INSERT INTO Productos (nombre, precio, descripcion, stock, categoriaId) VALUES (?, ?, ?, ?, ?)",
+        [nombre, precio, descripcion, stock, categoriaId],
+        function (err) {
+
+            if (err) {
+                return res.status(500).json({ error: err.message });
+            }
+
+            res.status(201).json({
+                success: true,
+                Headers: { apiKey, roleHeader },
+                data: {
+                    id: this.lastID,
+                    nombre,
+                    precio,
+                    descripcion,
+                    stock,
+                    categoriaId
+                }
+            });
+        }
+    );
 });
 
-// PUT: Actualizar usuario por ID
+
+// PUT - Actualizar producto por ID
 router.put('/productos/:id', (req, res) => {
 
     const apiKey = req.headers['password'];
     const roleHeader = req.headers['x-user-role'];
 
     if (!apiKey) {
-        return res.status(401).json({
-            success: false,
-            message: 'API key es requerida'
-        });
+        return res.status(401).json({ success: false, message: 'API key es requerida' });
     }
-
     if (apiKey !== '6789') {
-        return res.status(403).json({
-            success: false,
-            message: 'Error la password no es correcta'
-        });
+        return res.status(403).json({ success: false, message: 'Error la password no es correcta' });
+    }
+    if (roleHeader !== 'admin') {
+        return res.status(403).json({ success: false, message: 'No tienes permisos para realizar esta acción' });
     }
 
-    if (roleHeader !== 'admin') {
-        return res.status(403).json({
-            success: false,
-            message: 'No tienes permisos para realizar esta acción'
-        });
+    if (isNaN(req.params.id)) {
+        return res.status(400).json({ success: false, message: 'El ID debe ser un número válido' });
     }
 
     const id = parseInt(req.params.id);
-    const { nombre, precio, descripcion, stock, categoria } = req.body;
+    const { nombre, precio, descripcion, stock, categoriaId } = req.body;
 
-    const producto = productos.find(u => u.id === id);
-
-    if (!producto) {
-        return res.status(404).json({ success: false, message: 'Producto no encontrado' });
+    if (!nombre || precio === undefined || !descripcion || stock === undefined || !categoriaId) {
+        return res.status(400).json({
+            success: false,
+            message: 'Faltan datos requeridos: nombre, precio, descripcion, stock, categoria'
+        });
     }
 
-    producto.nombre = nombre;
-    producto.precio = precio;
-    producto.descripcion = descripcion;
-    producto.stock = stock;
-    producto.categoria = categoria;
+    if (isNaN(precio) || precio <= 0) {
+        return res.status(400).json({ success: false, message: 'El precio debe ser un número mayor a 0' });
+    }
 
-    res.json({ success: true, Headers: { apiKey, roleHeader }, data: producto });
+    if (isNaN(stock) || stock < 0) {
+        return res.status(400).json({ success: false, message: 'El stock debe ser un número mayor o igual a 0' });
+    }
+
+    db.run(
+        "UPDATE Productos SET nombre=?, precio=?, descripcion=?, stock=?, categoriaId=? WHERE id=?",
+        [nombre, precio, descripcion, stock, categoriaId, id],
+        function (err) {
+
+            if (err) {
+                return res.status(500).json({ error: err.message });
+            }
+
+            if (this.changes === 0) {
+                return res.status(404).json({ success: false, message: 'Producto no encontrado' });
+            }
+
+            res.json({
+                success: true,
+                Headers: { apiKey, roleHeader },
+                data: 'Producto actualizado'
+            });
+        }
+    );
 });
 
 
@@ -175,41 +216,36 @@ router.delete('/productos/:id', (req, res) => {
     const roleHeader = req.headers['x-user-role'];
 
     if (!apiKey) {
-        return res.status(401).json({
-            success: false,
-            message: 'API key es requerida'
-        });
+        return res.status(401).json({ success: false, message: 'API key es requerida' });
     }
-
     if (apiKey !== '6789') {
-        return res.status(403).json({
-            success: false,
-            message: 'Error la password no es correcta'
-        });
+        return res.status(403).json({ success: false, message: 'Error la password no es correcta' });
     }
-
     if (roleHeader !== 'admin') {
-        return res.status(403).json({
-            success: false,
-            message: 'No tienes permisos para realizar esta acción'
-        });
+        return res.status(403).json({ success: false, message: 'No tienes permisos para realizar esta acción' });
     }
 
-    const productIndex = productos.findIndex(u => u.id === parseInt(req.params.id));
-
-    if (productIndex === -1) {
-        return res.status(404).json({
-            success: false,
-            message: 'Producto no encontrado'
-        });
+    if (isNaN(req.params.id)) {
+        return res.status(400).json({ success: false, message: 'El ID debe ser un número válido' });
     }
 
-    productos.splice(productIndex, 1);
+    const id = parseInt(req.params.id);
 
-    res.status(201).json({
-        success: true,
-        Headers: { apiKey, roleHeader },
-        data: "El Producto se ha eliminado"
+    db.run("DELETE FROM Productos WHERE id = ?", [id], function (err) {
+
+        if (err) {
+            return res.status(500).json({ error: err.message });
+        }
+
+        if (this.changes === 0) {
+            return res.status(404).json({ success: false, message: 'Producto no encontrado' });
+        }
+
+        res.status(200).json({
+            success: true,
+            Headers: { apiKey, roleHeader },
+            data: 'El Producto se ha eliminado'
+        });
     });
 });
 
