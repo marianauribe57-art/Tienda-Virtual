@@ -1,203 +1,246 @@
 const express = require('express');
 const router = express.Router();
+const db = require('../db');
 
-const usuarios = [
-    { id: 1, nombre: 'Mateo', email: 'mateo@gmail.com', rol: 'Cloud', activo: true },
-    { id: 2, nombre: 'Ana', email: 'ana@gmail.com', rol: 'Developer', activo: true },
-    { id: 3, nombre: 'Luis', email: 'luis@gmail.com', rol: 'QA', activo: false }
-];
 
-// GET: todos los usuarios
+// GET todos los usuarios
 router.get('/usuarios', (req, res) => {
 
     const apiKey = req.headers['password'];
 
     if (!apiKey) {
-        return res.status(401).json({
-            success: false,
-            message: 'API key es requerida'
-        });
+        return res.status(401).json({ success:false, message:'API key es requerida' });
     }
 
     if (apiKey !== '12345') {
-        return res.status(403).json({
-            success: false,
-            message: 'Error la password no es correcta'
-        });
+        return res.status(403).json({ success:false, message:'Error la password no es correcta' });
     }
 
     const { nombre, email, rol, activo } = req.query;
 
-    let filtradosUsuarios = usuarios.filter(u => {
-        return (
-            (!nombre || u.nombre.toLowerCase().includes(nombre.toLowerCase())) &&
-            (!email || u.email.toLowerCase().includes(email.toLowerCase())) &&
-            (!rol || u.rol.toLowerCase().includes(rol.toLowerCase())) &&
-            (!activo || u.activo.toString() === activo.toString())
-        );
+    let query = "SELECT * FROM Usuarios WHERE 1=1";
+    let params = [];
+
+    if (nombre) {
+        query += " AND nombre LIKE ?";
+        params.push(`%${nombre}%`);
+    }
+
+    if (email) {
+        query += " AND email LIKE ?";
+        params.push(`%${email}%`);
+    }
+
+    if (rol) {
+        query += " AND rol LIKE ?";
+        params.push(`%${rol}%`);
+    }
+
+    if (activo !== undefined) {
+        query += " AND activo = ?";
+        params.push(activo);
+    }
+
+    db.all(query, params, (err, rows) => {
+
+        if (err) {
+            return res.status(500).json({ success:false, error:err.message });
+        }
+
+        res.json({ success:true, data:rows });
+
     });
 
-    res.json({ success: true, Headers: { apiKey }, data: filtradosUsuarios });
 });
 
 
-// GET - Obtener un usuario por ID
-router.get('/usuarios/:id', (req, res) => {
+// GET usuario por ID
+router.get('/usuarios/:id', (req,res)=>{
 
     const apiKey = req.headers['password'];
 
-    if (!apiKey) {
-        return res.status(401).json({
-            success: false,
-            message: 'API key es requerida'
-        });
+    if(!apiKey){
+        return res.status(401).json({success:false,message:'API key es requerida'})
     }
 
-    if (apiKey !== '12345') {
-        return res.status(403).json({
-            success: false,
-            message: 'Error la password no es correcta'
-        });
+    if(apiKey !== '12345'){
+        return res.status(403).json({success:false,message:'Error la password no es correcta'})
     }
 
-    const usuario = usuarios.find(u => u.id === parseInt(req.params.id));
+    const id = parseInt(req.params.id)
 
-    if (!usuario) {
-        return res.status(404).json({ success: false, message: 'Usuario no encontrado' });
+    if(isNaN(id)){
+        return res.status(400).json({success:false,message:'El ID debe ser número'})
     }
 
-    res.json({ success: true, Headers: { apiKey }, data: usuario });
-});
+    db.get("SELECT * FROM Usuarios WHERE id = ?",[id],(err,row)=>{
+
+        if(err){
+            return res.status(500).json({error:err.message})
+        }
+
+        if(!row){
+            return res.status(404).json({success:false,message:'Usuario no encontrado'})
+        }
+
+        res.json({success:true,data:row})
+
+    })
+
+})
 
 
-// POST - Registrar un nuevo usuario
-router.post('/usuarios', (req, res) => {
+// POST crear usuario
+router.post('/usuarios',(req,res)=>{
 
-    const apiKey = req.headers['password'];
-    const roleHeader = req.headers['x-user-role'];
+    const apiKey = req.headers['password']
+    const roleHeader = req.headers['x-user-role']
 
-    if (!apiKey) {
-        return res.status(401).json({
-            success: false,
-            message: 'API key es requerida'
-        });
+    if(!apiKey){
+        return res.status(401).json({success:false,message:'API key es requerida'})
     }
 
-    if (apiKey !== '6789') {
-        return res.status(403).json({
-            success: false,
-            message: 'Error la password no es correcta'
-        });
+    if(apiKey !== '6789'){
+        return res.status(403).json({success:false,message:'Error la password no es correcta'})
     }
 
-    if (roleHeader !== 'admin') {
-        return res.status(403).json({
-            success: false,
-            message: 'No tienes permisos para realizar esta acción'
-        });
+    if(roleHeader !== 'admin'){
+        return res.status(403).json({success:false,message:'No tienes permisos'})
     }
 
-    const { nombre, email, rol, activo } = req.body;
+    const {nombre,email,rol,activo} = req.body
 
-    if (!nombre || !email || !rol || activo === undefined) {
-        return res.status(400).json({ success: false, message: 'Faltan datos requeridos' });
+    if(!nombre || !email || !rol || activo === undefined){
+        return res.status(400).json({success:false,message:'Faltan campos'})
     }
 
-    const newUser = {
-        id: usuarios.length + 1,
-        nombre,
-        email,
-        rol,
-        activo
-    };
-
-    usuarios.push(newUser);
-
-    res.status(201).json({ success: true, Headers: { apiKey, roleHeader }, data: newUser });
-});
-
-
-// PUT: Actualizar usuario por ID
-router.put('/usuarios/:id', (req, res) => {
-
-    const apiKey = req.headers['password'];
-    const roleHeader = req.headers['x-user-role'];
-
-    if (!apiKey) {
-        return res.status(401).json({
-            success: false,
-            message: 'API key es requerida'
-        });
+    if(typeof activo !== 'boolean'){
+        return res.status(400).json({success:false,message:'activo debe ser boolean'})
     }
 
-    if (apiKey !== '6789') {
-        return res.status(403).json({
-            success: false,
-            message: 'Error la password no es correcta'
-        });
+    db.get("SELECT * FROM Usuarios WHERE email = ?",[email],(err,row)=>{
+
+        if(row){
+            return res.status(400).json({success:false,message:'Email ya existe'})
+        }
+
+        db.run(
+            "INSERT INTO Usuarios (nombre,email,rol,activo) VALUES (?,?,?,?)",
+            [nombre,email,rol,activo],
+            function(err){
+
+                if(err){
+                    return res.status(500).json({error:err.message})
+                }
+
+                res.status(201).json({
+                    success:true,
+                    data:{
+                        id:this.lastID,
+                        nombre,
+                        email,
+                        rol,
+                        activo
+                    }
+                })
+
+            }
+        )
+
+    })
+
+})
+
+
+// PUT actualizar usuario
+router.put('/usuarios/:id',(req,res)=>{
+
+    const apiKey = req.headers['password']
+    const roleHeader = req.headers['x-user-role']
+
+    if(!apiKey){
+        return res.status(401).json({success:false,message:'API key es requerida'})
     }
 
-    if (roleHeader !== 'admin') {
-        return res.status(403).json({
-            success: false,
-            message: 'No tienes permisos para realizar esta acción'
-        });
+    if(apiKey !== '6789'){
+        return res.status(403).json({success:false,message:'Error la password no es correcta'})
     }
 
-    const id = parseInt(req.params.id);
-    const { nombre, email, rol, activo } = req.body;
-
-    const usuario = usuarios.find(u => u.id === id);
-
-    if (!usuario) {
-        return res.status(404).json({ success: false, message: 'Usuario no encontrado' });
+    if(roleHeader !== 'admin'){
+        return res.status(403).json({success:false,message:'No tienes permisos'})
     }
 
-    usuario.nombre = nombre;
-    usuario.email = email;
-    usuario.rol = rol;
-    usuario.activo = activo;
+    const id = parseInt(req.params.id)
 
-    res.json({ success: true, Headers: { apiKey, roleHeader }, data: usuario });
-});
-
-
-// DELETE - Elimina un usuario por ID
-router.delete('/usuarios/:id', (req, res) => {
-
-    const apiKey = req.headers['password'];
-    const roleHeader = req.headers['x-user-role'];
-
-    if (!apiKey) {
-        return res.status(401).json({
-            success: false,
-            message: 'API key es requerida'
-        });
+    if(isNaN(id)){
+        return res.status(400).json({success:false,message:'ID inválido'})
     }
 
-    if (apiKey !== '6789') {
-        return res.status(403).json({
-            success: false,
-            message: 'Error la password no es correcta'
-        });
+    const {nombre,email,rol,activo} = req.body
+
+    if(!nombre || !email || !rol || activo === undefined){
+        return res.status(400).json({success:false,message:'Faltan campos'})
     }
 
-    if (roleHeader !== 'admin') {
-        return res.status(403).json({
-            success: false,
-            message: 'No tienes permisos para realizar esta acción'
-        });
+    db.run(
+        "UPDATE Usuarios SET nombre=?, email=?, rol=?, activo=? WHERE id=?",
+        [nombre,email,rol,activo,id],
+        function(err){
+
+            if(err){
+                return res.status(500).json({error:err.message})
+            }
+
+            if(this.changes === 0){
+                return res.status(404).json({success:false,message:'Usuario no encontrado'})
+            }
+
+            res.json({success:true,message:'Usuario actualizado'})
+
+        }
+    )
+
+})
+
+
+// DELETE usuario
+router.delete('/usuarios/:id',(req,res)=>{
+
+    const apiKey = req.headers['password']
+    const roleHeader = req.headers['x-user-role']
+
+    if(!apiKey){
+        return res.status(401).json({success:false,message:'API key es requerida'})
     }
 
-    const index = usuarios.findIndex(u => u.id === parseInt(req.params.id));
-
-    if (index === -1) {
-        return res.status(404).json({ success: false, message: 'Usuario no encontrado' });
+    if(apiKey !== '6789'){
+        return res.status(403).json({success:false,message:'Error la password no es correcta'})
     }
 
-    usuarios.splice(index, 1);
+    if(roleHeader !== 'admin'){
+        return res.status(403).json({success:false,message:'No tienes permisos'})
+    }
 
-    res.status(201).json({ success: true, Headers: { apiKey, roleHeader }, data: "El usuario se ha eliminado" });
-});
+    const id = parseInt(req.params.id)
+
+    if(isNaN(id)){
+        return res.status(400).json({success:false,message:'ID inválido'})
+    }
+
+    db.run("DELETE FROM Usuarios WHERE id=?",[id],function(err){
+
+        if(err){
+            return res.status(500).json({error:err.message})
+        }
+
+        if(this.changes === 0){
+            return res.status(404).json({success:false,message:'Usuario no encontrado'})
+        }
+
+        res.json({success:true,message:'Usuario eliminado'})
+
+    })
+
+})
 
 module.exports = router;
