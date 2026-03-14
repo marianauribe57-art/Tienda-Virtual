@@ -13,7 +13,7 @@ router.get('/pedidos', (req, res) => {
     if (!apiKey) {
         return res.status(401).json({ success: false, message: 'API key es requerida' });
     }
-    if (apiKey !== '12345') {
+    if (apiKey !== process.env.API_PASSWORD) {
         return res.status(403).json({ success: false, message: 'Error la password no es correcta' });
     }
 
@@ -56,7 +56,7 @@ router.get('/pedidos/:id', (req, res) => {
     if (!apiKey) {
         return res.status(401).json({ success: false, message: 'API key es requerida' });
     }
-    if (apiKey !== '12345') {
+    if (apiKey !== process.env.API_PASSWORD) {
         return res.status(403).json({ success: false, message: 'Error la password no es correcta' });
     }
 
@@ -90,7 +90,7 @@ router.post('/pedidos', (req, res) => {
     if (!apiKey) {
         return res.status(401).json({ success: false, message: 'API key es requerida' });
     }
-    if (apiKey !== '6789') {
+    if (apiKey !== process.env.API_PASSWORD_ADMIN) {
         return res.status(403).json({ success: false, message: 'Error la password no es correcta' });
     }
     if (roleHeader !== 'admin') {
@@ -163,7 +163,7 @@ router.put('/pedidos/:id', (req, res) => {
     if (!apiKey) {
         return res.status(401).json({ success: false, message: 'API key es requerida' });
     }
-    if (apiKey !== '6789') {
+    if (apiKey !== process.env.API_PASSWORD_ADMIN) {
         return res.status(403).json({ success: false, message: 'Error la password no es correcta' });
     }
     if (roleHeader !== 'admin') {
@@ -239,7 +239,7 @@ router.delete('/pedidos/:id', (req, res) => {
     if (!apiKey) {
         return res.status(401).json({ success: false, message: 'API key es requerida' });
     }
-    if (apiKey !== '6789') {
+    if (apiKey !== process.env.API_PASSWORD_ADMIN) {
         return res.status(403).json({ success: false, message: 'Error la password no es correcta' });
     }
     if (roleHeader !== 'admin') {
