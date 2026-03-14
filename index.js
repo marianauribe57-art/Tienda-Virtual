@@ -27,10 +27,10 @@ app.use((req, res, next) => {
 });
 
 // Rutas
-app.use('/productos', require('./routes/productos'));
-app.use('/usuarios', require('./routes/usuarios'));
-app.use('/categorias', require('./routes/categorias'));
-app.use('/pedidos', require('./routes/pedidos'));
+app.use('/api', require('./routes/productos'));
+app.use('/api', require('./routes/usuarios'));
+app.use('/api', require('./routes/categorias'));
+app.use('/api', require('./routes/pedidos'));
 
 // Render asigna el puerto automáticamente
 const PORT = process.env.PORT || 3000;
