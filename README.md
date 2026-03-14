@@ -22,7 +22,7 @@ git clone <url-del-repositorio>
 cd tienda-virtual
 
 # Instalar dependencias
-npm install
+npm  install 
 ```
 
 ---
