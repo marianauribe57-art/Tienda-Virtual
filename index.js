@@ -16,7 +16,10 @@ app.use((req, res, next) => {
         });
     }
 
-    if (apiKey !== process.env.API_PASSWORD) {
+    const isAdminRoute = req.method === 'POST' || req.method === 'PUT' || req.method === 'DELETE';
+    const expectedPassword = isAdminRoute ? process.env.API_PASSWORD_ADMIN : process.env.API_PASSWORD;
+
+    if (apiKey !== expectedPassword) {
         return res.status(403).json({
             success: false,
             message: 'Password incorrecta'

@@ -42,7 +42,7 @@ router.get('/productos', (req, res) => {
 
     if (categoriaId) {
         query += " AND categoria LIKE ?";
-        params.push(`%${categoria}%`);
+        params.push(`%${categoriaId}%`);
     }
 
     db.all(query, params, (err, rows) => {
